@@ -283,3 +283,23 @@ export async function fetchMachineById(id: number): Promise<Machine | undefined>
   const machines = await fetchAllMachines();
   return machines.find((m) => m.id === id);
 }
+
+export async function fetchCategories(): Promise<{ slug: string; name: string; count: number }[]> {
+  const machines = await fetchAllMachines();
+  const catMap = new Map<string, { name: string; count: number }>();
+
+  machines.forEach(m => {
+    m.category.forEach(cat => {
+      const existing = catMap.get(cat.id);
+      if (existing) {
+        existing.count++;
+      } else {
+        catMap.set(cat.id, { name: cat.name, count: 1 });
+      }
+    });
+  });
+
+  return Array.from(catMap.entries())
+    .map(([slug, { name, count }]) => ({ slug, name, count }))
+    .sort((a, b) => b.count - a.count);
+}

@@ -1,9 +1,87 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'wouter';
+import { Link, useParams, useLocation } from 'wouter';
 import { Loader2, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+
+// Helper to update or create a meta tag
+function updateMeta(name: string, content: string) {
+  let el = document.querySelector(`meta[name="${name}"]`);
+  if (el) {
+    el.setAttribute('content', content);
+  } else {
+    el = document.createElement('meta');
+    el.setAttribute('name', name);
+    el.setAttribute('content', content);
+    document.head.appendChild(el);
+  }
+}
+
+// Helper to update canonical link
+function updateCanonical(href: string) {
+  let el = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+  if (el) {
+    el.href = href;
+  } else {
+    el = document.createElement('link');
+    el.rel = 'canonical';
+    el.href = href;
+    document.head.appendChild(el);
+  }
+}
+
+// SEO descriptions per category slug
+const CATEGORY_SEO: Record<string, { title: string; description: string }> = {
+  entreprenoermaskiner: {
+    title: 'Entreprenørmaskiner til salg',
+    description: 'Se vores udvalg af brugte entreprenørmaskiner. Gravemaskiner, læssere, dumpere og mere hos Rold Maskinhandel i Nordjylland.',
+  },
+  gravemaskiner: {
+    title: 'Brugte gravemaskiner til salg',
+    description: 'Find brugte gravemaskiner til gode priser. Stort udvalg af kvalitetsmaskiner hos Rold Maskinhandel i Arden.',
+  },
+  minigravere: {
+    title: 'Minigravere til salg',
+    description: 'Brugte minigravere til gode priser. Se vores udvalg hos Rold Maskinhandel i Nordjylland.',
+  },
+  minilaessere: {
+    title: 'Minilæssere til salg',
+    description: 'Brugte minilæssere og kompaktlæssere. Se udvalget hos Rold Maskinhandel.',
+  },
+  gummihjulslaessere: {
+    title: 'Gummihjulslæssere til salg',
+    description: 'Brugte gummihjulslæssere til konkurrencedygtige priser hos Rold Maskinhandel.',
+  },
+  teleskoplaessere: {
+    title: 'Teleskoplæssere til salg',
+    description: 'Brugte teleskoplæssere til landbrug og byggeri. Se udvalget hos Rold Maskinhandel.',
+  },
+  dumpere: {
+    title: 'Dumpere til salg',
+    description: 'Brugte dumpere til gode priser. Se vores udvalg hos Rold Maskinhandel i Arden.',
+  },
+  transport: {
+    title: 'Transportmaskiner til salg',
+    description: 'Brugte transportmaskiner og tilbehør. Se udvalget hos Rold Maskinhandel.',
+  },
+  landbrug: {
+    title: 'Landbrugsmaskiner til salg',
+    description: 'Brugte landbrugsmaskiner til gode priser. Traktorer, læssere og mere hos Rold Maskinhandel.',
+  },
+  'have-park-og-vej': {
+    title: 'Have-, park- og vejmaskiner til salg',
+    description: 'Brugte have-, park- og vejmaskiner. Se udvalget hos Rold Maskinhandel i Nordjylland.',
+  },
+  byggematerialer: {
+    title: 'Byggematerialer til salg',
+    description: 'Byggematerialer og tilbehør til gode priser hos Rold Maskinhandel.',
+  },
+  materialehandtering: {
+    title: 'Materialehåndtering - maskiner til salg',
+    description: 'Brugte maskiner til materialehåndtering. Se udvalget hos Rold Maskinhandel.',
+  },
+};
 
 interface Category {
   id: string;
@@ -93,7 +171,7 @@ function CategoryTreeItem({
   const hasChildren = node.children.length > 0;
   const isExpanded = expandedCategories.has(node.id);
   const isSelected = selectedCategory === node.id;
-  
+
   return (
     <div style={{ marginLeft: level > 0 ? '12px' : '0' }}>
       <div className="flex items-center">
@@ -110,11 +188,12 @@ function CategoryTreeItem({
           </button>
         )}
         {!hasChildren && level > 0 && <div className="w-6" />}
-        <button
-          onClick={() => onSelect(node.id)}
+        <Link
+          href={isSelected ? '/maskiner' : `/maskiner/${node.id}`}
+          onClick={(e) => { e.preventDefault(); onSelect(node.id); }}
           className={`flex-1 text-left px-3 py-2 rounded text-sm flex items-center justify-between ${
-            isSelected 
-              ? 'bg-primary text-white' 
+            isSelected
+              ? 'bg-primary text-white'
               : 'hover:bg-slate-50'
           }`}
           data-testid={`filter-category-${node.id}`}
@@ -123,7 +202,7 @@ function CategoryTreeItem({
           <span className={`text-xs ${isSelected ? 'text-white/80' : 'text-muted-foreground'}`}>
             ({node.count})
           </span>
-        </button>
+        </Link>
       </div>
       
       {hasChildren && isExpanded && (
@@ -146,17 +225,38 @@ function CategoryTreeItem({
 }
 
 export default function Machines() {
+  const params = useParams<{ kategori?: string }>();
+  const [, navigate] = useLocation();
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showBrandDropdown, setShowBrandDropdown] = useState(false);
 
+  // Derive selectedCategory from URL
+  const selectedCategory = params.kategori || null;
+
+  // Set SEO meta tags based on active category
   useEffect(() => {
-    document.title = 'Maskiner på lager - Rold Maskinhandel | Brugte maskiner i Nordjylland';
-  }, []);
+    const baseUrl = 'https://www.roldmaskinhandel.dk';
+
+    if (selectedCategory && CATEGORY_SEO[selectedCategory]) {
+      const seo = CATEGORY_SEO[selectedCategory];
+      document.title = `${seo.title} - Rold Maskinhandel`;
+      updateMeta('description', seo.description);
+      updateCanonical(`${baseUrl}/maskiner/${selectedCategory}`);
+    } else {
+      document.title = 'Maskiner til salg - Rold Maskinhandel | Brugte maskiner i Nordjylland';
+      updateMeta('description', 'Se alle brugte maskiner til salg hos Rold Maskinhandel i Nordjylland. Entreprenørmaskiner, landbrugsmaskiner og mere.');
+      updateCanonical(`${baseUrl}/maskiner`);
+    }
+
+    return () => {
+      // Cleanup JSON-LD on unmount
+      document.getElementById('category-jsonld')?.remove();
+    };
+  }, [selectedCategory]);
 
   useEffect(() => {
     async function fetchMachines() {
@@ -209,7 +309,7 @@ export default function Machines() {
   }, [machines, selectedCategory, selectedBrand]);
 
   const clearFilters = () => {
-    setSelectedCategory(null);
+    navigate('/maskiner');
     setSelectedBrand(null);
   };
 
@@ -224,7 +324,11 @@ export default function Machines() {
   };
 
   const selectCategory = (catId: string) => {
-    setSelectedCategory(selectedCategory === catId ? null : catId);
+    if (!catId || selectedCategory === catId) {
+      navigate('/maskiner');
+    } else {
+      navigate(`/maskiner/${catId}`);
+    }
     setShowCategoryDropdown(false);
   };
 
@@ -266,6 +370,46 @@ export default function Machines() {
     return findInTree(categoryTree);
   }, [selectedCategory, categoryTree]);
 
+  // Add JSON-LD structured data for category pages
+  useEffect(() => {
+    if (!machines.length) return;
+
+    const baseUrl = 'https://www.roldmaskinhandel.dk';
+    const jsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'CollectionPage',
+      name: selectedCategory && CATEGORY_SEO[selectedCategory]
+        ? CATEGORY_SEO[selectedCategory].title
+        : 'Maskiner til salg',
+      description: selectedCategory && CATEGORY_SEO[selectedCategory]
+        ? CATEGORY_SEO[selectedCategory].description
+        : 'Brugte maskiner til salg hos Rold Maskinhandel',
+      url: selectedCategory ? `${baseUrl}/maskiner/${selectedCategory}` : `${baseUrl}/maskiner`,
+      numberOfItems: filteredMachines.length,
+      provider: {
+        '@type': 'LocalBusiness',
+        name: 'Rold Maskinhandel',
+        address: {
+          '@type': 'PostalAddress',
+          streetAddress: 'Haverslevvej 12',
+          addressLocality: 'Rold',
+          postalCode: '9510',
+          addressCountry: 'DK',
+        },
+        telephone: '+4525159495',
+      },
+    };
+
+    let script = document.getElementById('category-jsonld') as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement('script');
+      script.id = 'category-jsonld';
+      script.type = 'application/ld+json';
+      document.head.appendChild(script);
+    }
+    script.textContent = JSON.stringify(jsonLd);
+  }, [selectedCategory, selectedCategoryName, filteredMachines.length, machines.length]);
+
   return (
     <div className="min-h-screen bg-[#f5f5f5] flex flex-col">
       <Header />
@@ -274,7 +418,9 @@ export default function Machines() {
         <div className="sticky top-[72px] z-40 bg-white border-b border-gray-200">
           <div className="max-w-[1360px] mx-auto px-5 sm:px-8 py-4">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="font-serif text-[22px] text-[#1a1a1a] mr-4">Maskiner til salg</h1>
+              <h1 className="font-serif text-[22px] text-[#1a1a1a] mr-4">
+                {selectedCategoryName ? `${selectedCategoryName} til salg` : 'Maskiner til salg'}
+              </h1>
               <div className="relative">
                 <Button
                   variant="outline"
@@ -400,9 +546,10 @@ export default function Machines() {
           <div className="max-w-[1360px] mx-auto px-5 sm:px-8 pt-8 pb-2">
             <div className="flex justify-center gap-8 sm:gap-10 overflow-x-auto pb-4">
               {/* All */}
-              <button
-                onClick={() => { setSelectedCategory(null); setSelectedBrand(null); }}
+              <Link
+                href="/maskiner"
                 className="flex flex-col items-center gap-2.5 flex-shrink-0 group"
+                onClick={() => setSelectedBrand(null)}
               >
                 <div className={`w-[76px] h-[76px] sm:w-[88px] sm:h-[88px] rounded-full overflow-hidden border-[3px] transition-all duration-200 flex items-center justify-center ${
                   !selectedCategory
@@ -417,11 +564,11 @@ export default function Machines() {
                   }`}>Alle</p>
                   <p className="text-[11px] text-[#aaa] mt-0.5">{machines.length} maskiner</p>
                 </div>
-              </button>
+              </Link>
               {topCategories.map((cat) => (
-                <button
+                <Link
                   key={cat.id}
-                  onClick={() => selectCategory(cat.id)}
+                  href={selectedCategory === cat.id ? '/maskiner' : `/maskiner/${cat.id}`}
                   className="flex flex-col items-center gap-2.5 flex-shrink-0 group"
                 >
                   <div className={`w-[76px] h-[76px] sm:w-[88px] sm:h-[88px] rounded-full overflow-hidden border-[3px] transition-all duration-200 ${
@@ -441,7 +588,7 @@ export default function Machines() {
                     }`}>{cat.name}</p>
                     <p className="text-[11px] text-[#aaa] mt-0.5">{cat.count} maskiner</p>
                   </div>
-                </button>
+                </Link>
               ))}
             </div>
           </div>
